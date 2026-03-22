@@ -713,6 +713,10 @@ body {
     list-style: none; display: flex; flex-direction: column; gap: 6px;
 }
 
+/* ===== MOBILE-ONLY ELEMENTS (hidden on desktop) ===== */
+#mobile-play { display: none; }
+#mobile-task-banner { display: none; }
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 800px) {
     #task-panel { display: none; }
@@ -721,78 +725,132 @@ body {
     .master-slider-track { width: 26px; }
 }
 
-/* ===== MOBILE: Single-panel tabbed layout ===== */
+/* ===== MOBILE: Complete redesign for phone screens ===== */
 @media (max-width: 600px) {
-    #app { padding: 2px; gap: 2px; }
-    #top-bar { height: 34px; min-height: 34px; padding: 0 8px; }
-    #logo { font-size: 11px; }
-    /* Hide track nav and BPM on mobile — not needed for tutorial */
+    /* --- Reset layout to tight vertical stack --- */
+    #app { padding: 0; gap: 0; height: 100vh; height: 100dvh; }
+
+    /* --- Top bar: logo left, section dots centre, play button right --- */
+    #top-bar {
+        height: 40px; min-height: 40px;
+        padding: 0 10px;
+        border-radius: 0;
+        border: none; border-bottom: 1px solid var(--border);
+    }
+    #logo { font-size: 12px; }
     #track-nav { display: none; }
     #bpm-display { display: none; }
 
-    /* Workspace: vertical stack, no master column */
-    #workspace { flex-direction: column; }
-    #master-controls { display: none; }
+    /* Play button in top bar on mobile */
+    #mobile-play {
+        display: flex; align-items: center; justify-content: center;
+        width: 32px; height: 32px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05);
+        color: #fff; cursor: pointer; flex-shrink: 0;
+    }
+    #mobile-play.playing { border-color: rgba(196,74,255,0.5); background: rgba(196,74,255,0.12); }
+    #mobile-play .tp-play { display: none; }
+    #mobile-play:not(.playing) .tp-pause { display: none; }
+    #mobile-play:not(.playing) .tp-play { display: block; }
+    /* Ghost glow on mobile play button */
+    #mobile-play.ghost-glow {
+        animation: play-ghost-pulse 1.2s ease-in-out infinite;
+    }
 
-    /* Panel tabs — visible on mobile */
+    /* --- Task banner: always visible, shows current task --- */
+    #mobile-task-banner {
+        display: block;
+        padding: 8px 12px;
+        background: rgba(255,255,255,0.03);
+        border-bottom: 1px solid var(--border);
+        min-height: 48px;
+        flex-shrink: 0;
+    }
+    #mobile-task-section {
+        font-family: 'Orbitron', sans-serif; font-weight: 700;
+        font-size: 9px; letter-spacing: 0.1em;
+        color: var(--text-dim); margin-bottom: 2px;
+    }
+    #mobile-task-text {
+        font-size: 13px; font-weight: 500;
+        color: #fff; line-height: 1.3;
+    }
+    #mobile-task-hint {
+        font-size: 11px; color: var(--text-dim);
+        font-style: italic; line-height: 1.3; margin-top: 2px;
+    }
+
+    /* --- Hide desktop-only elements --- */
+    #master-controls { display: none; }
+    #task-panel { display: none; }
+    #task-drawer { display: none; }
+    #transport { display: none; }
+    #sections { display: none; }
+
+    /* --- Workspace: vertical, takes all remaining space --- */
+    #workspace {
+        flex: 1; flex-direction: column; gap: 0; min-height: 0;
+    }
+
+    /* --- Panel tabs --- */
     #panel-tabs {
-        display: flex; gap: 2px;
-        height: 30px; min-height: 30px; flex-shrink: 0;
+        display: flex; gap: 0;
+        height: 28px; min-height: 28px; flex-shrink: 0;
+        border-bottom: 1px solid var(--border);
     }
     .panel-tab {
         flex: 1; font-family: 'Orbitron', sans-serif;
-        font-size: 9px; font-weight: 700; letter-spacing: 0.05em;
-        border: 1px solid var(--border); border-radius: 6px;
-        background: var(--panel-bg); color: var(--text-dim);
-        cursor: pointer; transition: all 0.2s;
+        font-size: 8px; font-weight: 700; letter-spacing: 0.04em;
+        border: none; border-radius: 0;
+        background: transparent; color: var(--text-dim);
+        cursor: pointer; transition: all 0.15s;
+        border-bottom: 2px solid transparent;
     }
-    .panel-tab:hover { color: #ccc; }
     .panel-tab.active { color: #fff; }
-    .panel-tab[data-layer="bass"].active  { border-color: var(--bass); color: var(--bass); background: rgba(232,168,73,0.1); }
-    .panel-tab[data-layer="drums"].active { border-color: var(--drums); color: var(--drums); background: rgba(74,158,255,0.1); }
-    .panel-tab[data-layer="synth"].active { border-color: var(--synth); color: var(--synth); background: rgba(196,74,255,0.1); }
-    .panel-tab[data-layer="lead"].active  { border-color: var(--lead); color: var(--lead); background: rgba(74,255,184,0.1); }
+    .panel-tab[data-layer="bass"].active  { color: var(--bass); border-bottom-color: var(--bass); }
+    .panel-tab[data-layer="drums"].active { color: var(--drums); border-bottom-color: var(--drums); }
+    .panel-tab[data-layer="synth"].active { color: var(--synth); border-bottom-color: var(--synth); }
+    .panel-tab[data-layer="lead"].active  { color: var(--lead); border-bottom-color: var(--lead); }
 
-    /* Panels: single panel view — only active panel visible */
+    /* --- Panels: one at a time, full remaining space --- */
     #panels {
+        flex: 1;
         grid-template-columns: 1fr;
         grid-template-rows: 1fr;
+        gap: 0; min-height: 0;
     }
-    .panel { display: none; }
-    .panel.mobile-active {
-        display: flex;
+    .panel {
+        display: none;
+        border-radius: 0; border: none;
+        padding: 6px 8px;
     }
+    .panel.mobile-active { display: flex; }
 
-    /* Grid: wider labels on mobile for readability */
-    .grid { grid-template-columns: 32px repeat(16, 1fr); }
-    .grid-label { font-size: 7px; }
-    .grid-cell { min-height: 18px; }
+    /* --- Panel header hidden on mobile (tabs serve this purpose) --- */
+    .panel-head { display: none; }
 
-    /* Sliders: bigger on mobile for finger taps */
-    .sliders { height: 100px; min-height: 80px; }
-    .slider-track { height: 80px; width: 30px; }
-    .slider-label { font-size: 8px; }
-
-    /* Sections bar */
-    #sections { height: 28px; min-height: 28px; }
-    .sec-btn { font-size: 7px; }
-
-    /* Transport */
-    #transport { height: 42px; min-height: 42px; }
-    .transport-btn { width: 42px; height: 42px; }
-
-    /* Task drawer: ensure it's visible and accessible */
-    #task-drawer {
-        max-height: 50vh;
+    /* --- Grid: full width, touch-friendly cells --- */
+    .grid {
+        grid-template-columns: 36px repeat(16, 1fr);
+        gap: 2px;
     }
-    #task-drawer.drawer-hidden {
-        transform: translateY(calc(100% - 40px));
+    .grid-label { font-size: 7px; padding-right: 3px; }
+    .grid-cell { min-height: 22px; border-radius: 4px; }
+    .beat-number { font-size: 6px; height: 10px; }
+
+    /* --- Sliders: horizontal row, shorter for mobile --- */
+    .sliders {
+        height: 90px; min-height: 70px;
+        gap: 4px; padding: 4px 2px 8px;
     }
-    #drawer-handle {
-        width: 48px; height: 5px; margin: 10px auto;
-    }
+    .slider-track { height: 65px; width: 28px; }
+    .slider-label { font-size: 7px; }
+
+    /* --- Section progress dots (replaces full section bar) --- */
+    /* Shown inside top-bar via JS as small dots */
 }
 
+/* ===== Desktop short screens ===== */
 @media (max-height: 500px) {
     #top-bar { height: 30px; min-height: 30px; }
     .panel { padding: 3px 6px; }

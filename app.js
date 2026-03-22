@@ -1487,6 +1487,8 @@ class BeatLabApp {
 
     // Start PAUSED — first task is "press play"
     document.getElementById('play-pause').classList.remove('playing');
+    const mobilePlay = document.getElementById('mobile-play');
+    if (mobilePlay) mobilePlay.classList.remove('playing');
     this.startUILoop();
     this.updateSectionButtons();
   }
@@ -1949,6 +1951,31 @@ class BeatLabApp {
 
     // Mobile drawer
     this.renderDrawer(section, states, completed, total);
+
+    // Mobile task banner — show the current active task
+    this.renderMobileTaskBanner(section, states, completed, total);
+  }
+
+  renderMobileTaskBanner(section, states, completed, total) {
+    const sectionEl = document.getElementById('mobile-task-section');
+    const textEl = document.getElementById('mobile-task-text');
+    const hintEl = document.getElementById('mobile-task-hint');
+    if (!sectionEl) return;
+
+    sectionEl.textContent = `${section.title} — ${completed}/${total}`;
+
+    // Find the first incomplete task
+    const activeIdx = states.indexOf(false);
+    if (activeIdx === -1) {
+      textEl.textContent = 'All tasks complete!';
+      hintEl.textContent = '';
+    } else {
+      const task = section.tasks[activeIdx];
+      const layerName = LAYER_NAMES[task.layer];
+      const prefix = layerName ? `${layerName}: ` : '';
+      textEl.textContent = prefix + task.text;
+      hintEl.textContent = task.hint || '';
+    }
   }
 
   renderDrawer(section, states, completed, total) {
@@ -2002,6 +2029,8 @@ class BeatLabApp {
     if (masterEl) masterEl.classList.remove('ghost-glow');
     const playBtn = document.getElementById('play-pause');
     if (playBtn) playBtn.classList.remove('ghost-glow');
+    const mobilePlayBtn = document.getElementById('mobile-play');
+    if (mobilePlayBtn) mobilePlayBtn.classList.remove('ghost-glow');
   }
 
   applyGhostHints() {
@@ -2081,6 +2110,8 @@ class BeatLabApp {
     } else if (task.type === 'press_play') {
       const playBtn = document.getElementById('play-pause');
       if (playBtn) playBtn.classList.add('ghost-glow');
+      const mobilePlayBtn = document.getElementById('mobile-play');
+      if (mobilePlayBtn) mobilePlayBtn.classList.add('ghost-glow');
     }
 
     // Auto-switch to the right panel on mobile
@@ -2224,11 +2255,16 @@ class BeatLabApp {
       });
     });
 
-    document.getElementById('play-pause').addEventListener('click', () => {
+    const togglePlay = () => {
       const playing = this.engine.togglePlay();
       document.getElementById('play-pause').classList.toggle('playing', playing);
+      const mobilePlay = document.getElementById('mobile-play');
+      if (mobilePlay) mobilePlay.classList.toggle('playing', playing);
       this.checkTasks();
-    });
+    };
+    document.getElementById('play-pause').addEventListener('click', togglePlay);
+    const mobilePlayBtn = document.getElementById('mobile-play');
+    if (mobilePlayBtn) mobilePlayBtn.addEventListener('click', togglePlay);
 
     // Stop painting on mouseup/touchend
     window.addEventListener('mouseup', () => { this.painting = false; });

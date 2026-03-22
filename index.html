@@ -67,7 +67,22 @@
                 <button id="next-track" class="nav-arrow">&#9654;</button>
             </div>
             <span id="bpm-display"></span>
+            <button id="mobile-play" class="mobile-play-btn" aria-label="Play/Pause">
+                <svg class="tp-pause" viewBox="0 0 24 24" width="20" height="20">
+                    <rect x="5" y="3" width="5" height="18" rx="1" fill="currentColor"/>
+                    <rect x="14" y="3" width="5" height="18" rx="1" fill="currentColor"/>
+                </svg>
+                <svg class="tp-play" viewBox="0 0 24 24" width="20" height="20">
+                    <polygon points="6,3 6,21 20,12" fill="currentColor"/>
+                </svg>
+            </button>
         </header>
+
+        <div id="mobile-task-banner">
+            <div id="mobile-task-section"></div>
+            <div id="mobile-task-text"></div>
+            <div id="mobile-task-hint"></div>
+        </div>
 
         <div id="workspace">
             <aside id="master-controls">
