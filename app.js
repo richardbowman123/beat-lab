@@ -162,18 +162,24 @@ const TRACKS = [
     }},
     synth: {
       osc:'sine',
-      filterFreq:1400, rolloff:-12,
-      attack:0.8, decay:1.0, sustain:0.5, release:3.0, noteDur:'1m',
+      filterFreq:2000, rolloff:-12,
+      attack:0.3, decay:0.8, sustain:0.4, release:2.0, noteDur:'2n',
       polyphony: 4,
+      fm: {
+        harmonicity: 3.01,
+        modulationIndex: 1.5,
+        modType: 'sine',
+        modAttack: 0.5, modDecay: 0.4, modSustain: 0.05, modRelease: 1.5
+      },
       sections: {
         intro:  N8,
-        // Verse: single Em pad — barely there, just warmth
+        // Verse: single Em voicing — warm FM shimmer
         verse:  [['E3','B3'],null,null,null,null,null,null,null],
-        // Chorus: Em held, then Am on beat 5 — gentle movement
+        // Chorus: Em and Am — gentle harmonic movement
         chorus: [['E3','B3'],null,null,null,['A3','E4'],null,null,null],
-        // Drop: chords shift every 2 beats — Em, C, G, Am
+        // Drop: Em, C, G, Am — full progression
         drop:   [['E3','B3'],null,['C3','G3'],null,['G3','D4'],null,['A3','E4'],null],
-        // Outro: single chord dissolving
+        // Outro: dissolving
         outro:  [['E3','B3'],null,null,null,null,null,null,null]
       }
     },
@@ -804,20 +810,41 @@ class MelodicLayer {
       this.extras.push(this.dist);
     }
 
-    // Main synth — supports fat oscillators via oscCount/oscSpread
-    const oscConfig = { type: config.osc||'sawtooth' };
-    if (config.oscCount) {
-      oscConfig.count = config.oscCount;
-      oscConfig.spread = config.oscSpread||20;
-    }
-    this.synth = new Tone.PolySynth(Tone.Synth, {
-      maxPolyphony: config.polyphony||8,
-      oscillator: oscConfig,
-      envelope: {
-        attack: config.attack||0.01, decay: config.decay||0.2,
-        sustain: config.sustain||0.3, release: config.release||0.2
+    // Main synth — supports FM synthesis and fat oscillators
+    const envConfig = {
+      attack: config.attack||0.01, decay: config.decay||0.2,
+      sustain: config.sustain||0.3, release: config.release||0.2
+    };
+
+    if (config.fm) {
+      // FM synthesis — rich, evolving tones (Rhodes, bells, glassy pads)
+      this.synth = new Tone.PolySynth(Tone.FMSynth, {
+        maxPolyphony: config.polyphony||8,
+        harmonicity: config.fm.harmonicity||2,
+        modulationIndex: config.fm.modulationIndex||3,
+        oscillator: { type: config.osc||'sine' },
+        modulation: { type: config.fm.modType||'sine' },
+        envelope: envConfig,
+        modulationEnvelope: {
+          attack: config.fm.modAttack||0.2,
+          decay: config.fm.modDecay||0.3,
+          sustain: config.fm.modSustain||0.1,
+          release: config.fm.modRelease||0.8
+        }
+      });
+    } else {
+      // Standard oscillator — supports fat oscillators via oscCount/oscSpread
+      const oscConfig = { type: config.osc||'sawtooth' };
+      if (config.oscCount) {
+        oscConfig.count = config.oscCount;
+        oscConfig.spread = config.oscSpread||20;
       }
-    });
+      this.synth = new Tone.PolySynth(Tone.Synth, {
+        maxPolyphony: config.polyphony||8,
+        oscillator: oscConfig,
+        envelope: envConfig
+      });
+    }
     this.synth.connect(synthTarget);
 
     // Optional sub-bass layer (clean sine, bypasses distortion/filter)
