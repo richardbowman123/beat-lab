@@ -1428,7 +1428,6 @@ class BeatLabApp {
     this.startTutorialSection('intro');
 
     this.updateTrackDisplay();
-    this.buildAllGrids();
 
     this.engine.play();
     document.getElementById('play-pause').classList.add('playing');
@@ -1924,6 +1923,9 @@ class BeatLabApp {
 
   clearGhostHints() {
     document.querySelectorAll('.grid-cell.ghost').forEach(c => c.classList.remove('ghost'));
+    document.querySelectorAll('.slider-unit.ghost-glow').forEach(c => c.classList.remove('ghost-glow'));
+    const masterEl = document.querySelector('.master-slider-track');
+    if (masterEl) masterEl.classList.remove('ghost-glow');
   }
 
   applyGhostHints() {
@@ -1985,7 +1987,14 @@ class BeatLabApp {
         }
       }
     }
-    // volume/param/master_volume tasks: no ghost cells (slider-based)
+    // Slider-based tasks: glow the relevant fader
+    if (task.type === 'volume' || task.type === 'param') {
+      const slider = this.sliders[c.param];
+      if (slider) slider.el.classList.add('ghost-glow');
+    } else if (task.type === 'master_volume') {
+      const masterEl = document.querySelector('.master-slider-track');
+      if (masterEl) masterEl.classList.add('ghost-glow');
+    }
   }
 
   checkTasks() {

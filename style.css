@@ -405,6 +405,23 @@ body {
     background: linear-gradient(to top, rgba(74,255,184,0.08) 0%, rgba(74,255,184,0.35) 100%);
 }
 
+/* Ghost glow on sliders for volume/param tasks */
+.slider-unit.ghost-glow .slider-track,
+.master-slider-track.ghost-glow {
+    animation: slider-ghost-pulse 1.2s ease-in-out infinite;
+}
+@keyframes slider-ghost-pulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(255,255,255,0.08); }
+    50% { box-shadow: 0 0 12px rgba(255,255,255,0.25), 0 0 4px rgba(255,255,255,0.15); }
+}
+.slider-unit.ghost-glow .slider-label {
+    animation: label-ghost-pulse 1.2s ease-in-out infinite;
+}
+@keyframes label-ghost-pulse {
+    0%, 100% { color: var(--text-dim); }
+    50% { color: rgba(255,255,255,0.7); }
+}
+
 /* ===== TASK PANEL (right side, desktop) — BIGGER ===== */
 #task-panel {
     width: 280px; min-width: 280px;
