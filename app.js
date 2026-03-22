@@ -1,6 +1,6 @@
 /* ============================================================
-   SIGNAL — DJ Production Tutorial Game
-   Learn to build a D&B track step by step
+   BEAT LAB — learn to produce
+   Step-by-step music production tutorial game
    ============================================================ */
 
 const Z16 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
@@ -1386,8 +1386,8 @@ class SliderControl {
 }
 
 
-// ===== SIGNAL APP =====
-class SignalApp {
+// ===== BEAT LAB APP =====
+class BeatLabApp {
   constructor() {
     this.engine = null;
     this.sliders = {};
@@ -2216,15 +2216,15 @@ class SignalApp {
 let app;
 document.getElementById('start-btn').addEventListener('click', async () => {
   if (!app) {
-    app = new SignalApp();
+    app = new BeatLabApp();
     try {
       await app.start();
     } catch(e) {
-      console.error('SIGNAL start error:', e);
+      console.error('Beat Lab start error:', e);
       const msg = document.createElement('div');
       msg.style.cssText = 'position:fixed;inset:0;background:#111;color:#f44;padding:40px;font:16px monospace;z-index:9999;white-space:pre-wrap;';
       const debug = app.engine ? '\n\nDebug: ' + app.engine._debugInfo : '\n\nNo engine created';
-      msg.textContent = 'Error starting SIGNAL:\n\n' + (e.stack || e) + debug;
+      msg.textContent = 'Error starting Beat Lab:\n\n' + (e.stack || e) + debug;
       document.body.appendChild(msg);
     }
   }
