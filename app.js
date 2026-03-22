@@ -9,7 +9,7 @@ const N16 = [null,null,null,null,null,null,null,null,null,null,null,null,null,nu
 const LAYER_COLOURS = { bass: '#e8a849', drums: '#4a9eff', synth: '#c44aff', lead: '#4affb8' };
 const SECTIONS = ['intro','verse','chorus','drop','outro'];
 const DRUM_VOICES = ['clap','hat','snare','kick']; // top to bottom (kick at bottom)
-const DRUM_LABELS = ['CL','HH','SN','KK'];
+const DRUM_LABELS = ['CLAP','HI-HAT','SNARE','KICK'];
 
 // ===== MIDI NOTE HELPER =====
 function noteToMidi(n) {
@@ -416,21 +416,21 @@ const TUTORIAL_TASKS = {
     tasks: [
       {
         text: 'Add kick on beat 1',
-        hint: 'Click the bottom row (KK) at column 1. This is where the bar starts.',
+        hint: 'Click the KICK row at column 1. This is where the bar starts.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'kick', col: 0 }
       },
       {
         text: 'Add the second kick off-beat',
-        hint: 'In D&B, the second kick lands late. Click KK at column 11.',
+        hint: 'In D&B, the second kick lands late. Click KICK at column 11.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'kick', col: 10 }
       },
       {
         text: 'Add off-beat hi-hats',
-        hint: 'Click HH at columns 3, 7, 11, 15. Off-beat hats drive the groove.',
+        hint: 'Click HI-HAT at columns 3, 7, 11, 15. Off-beat hats drive the groove.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'hat', cols: [2,6,10,14] }
@@ -458,21 +458,21 @@ const TUTORIAL_TASKS = {
     tasks: [
       {
         text: 'Add the breakbeat snare',
-        hint: 'Click SN at column 5. This is the classic D&B snare spot.',
+        hint: 'Click SNARE at column 5. This is the classic D&B snare spot.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'snare', col: 4 }
       },
       {
         text: 'Add a ghost snare',
-        hint: 'Click SN at column 8. Ghost notes give it that jungle shuffle.',
+        hint: 'Click SNARE at column 8. Ghost notes give it that jungle shuffle.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'snare', col: 7 }
       },
       {
         text: 'Snare roll at the bar end',
-        hint: 'Click SN at column 15. Drives into the next bar.',
+        hint: 'Click SNARE at column 15. Drives into the next bar.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'snare', col: 14 }
@@ -549,7 +549,7 @@ const TUTORIAL_TASKS = {
       },
       {
         text: 'Clap on the snare hit',
-        hint: 'Click CL at column 5. Layers with the snare for power.',
+        hint: 'Click CLAP at column 5. Layers with the snare for power.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'clap', col: 4 }
@@ -591,7 +591,7 @@ const TUTORIAL_TASKS = {
       },
       {
         text: 'Fill out the hi-hats',
-        hint: 'Use the mute toggle (click HH label) to unmute, then fill gaps.',
+        hint: 'Use the mute toggle (click HI-HAT label) to unmute, then fill gaps.',
         layer: 'drums',
         type: 'grid_on',
         check: { layer:'drums', voice:'hat', cols: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] }
@@ -1511,12 +1511,32 @@ class BeatLabApp {
     this.buildMelodicGrid('lead');
   }
 
+  createBeatNumberCorner() {
+    const corner = document.createElement('div');
+    corner.className = 'beat-number-corner';
+    return corner;
+  }
+
+  createBeatNumber(col, hidden) {
+    const num = document.createElement('div');
+    num.className = 'beat-number';
+    if (hidden) num.classList.add('beat-number-hidden');
+    num.textContent = col + 1;
+    return num;
+  }
+
   buildDrumGrid() {
     const container = document.querySelector('.grid[data-layer="drums"]');
     container.innerHTML = '';
     const pattern = this.engine.getDrumGrid();
     const rows = DRUM_VOICES.length;
-    container.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    container.style.gridTemplateRows = `auto repeat(${rows}, 1fr)`;
+
+    // Beat number header row
+    container.appendChild(this.createBeatNumberCorner());
+    for (let c = 0; c < 16; c++) {
+      container.appendChild(this.createBeatNumber(c));
+    }
 
     this.gridCells.drums = [];
     for (let r = 0; r < rows; r++) {
@@ -1583,8 +1603,15 @@ class BeatLabApp {
       return;
     }
 
-    container.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    container.style.gridTemplateRows = `auto repeat(${rows}, 1fr)`;
     this.gridCells[layerName] = [];
+
+    // Beat number header row
+    container.appendChild(this.createBeatNumberCorner());
+    const cols = is16 ? 16 : 16; // always 16 visual columns
+    for (let c = 0; c < cols; c++) {
+      container.appendChild(this.createBeatNumber(c, !is16 && c % 2 !== 0));
+    }
 
     for (let r = 0; r < rows; r++) {
       const label = document.createElement('div');

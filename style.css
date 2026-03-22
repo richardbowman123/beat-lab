@@ -189,12 +189,12 @@ body {
 .grid {
     display: grid; gap: 1px;
     width: 100%; height: 100%;
-    grid-template-columns: 22px repeat(16, 1fr);
+    grid-template-columns: 44px repeat(16, 1fr);
 }
 .grid-label {
     display: flex; align-items: center; justify-content: flex-end;
-    font-family: 'Space Grotesk', sans-serif; font-size: 7px;
-    color: var(--text-dim); padding-right: 3px;
+    font-family: 'Space Grotesk', sans-serif; font-size: 8px; font-weight: 500;
+    color: var(--text-dim); padding-right: 4px;
     white-space: nowrap; overflow: hidden;
     cursor: default;
 }
@@ -215,6 +215,21 @@ body {
     background: rgba(255,255,255,0.12);
 }
 
+/* Beat number header row */
+.beat-number-corner {
+    /* empty top-left corner above labels */
+}
+.beat-number {
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-size: 7px;
+    color: rgba(255,255,255,0.2);
+    height: 12px;
+    user-select: none;
+}
+.beat-number-hidden {
+    visibility: hidden;
+}
+
 .grid-cell {
     border-radius: 3px;
     background: rgba(255,255,255,0.06);
@@ -224,15 +239,15 @@ body {
     cursor: pointer;
 }
 .grid-cell.on {
-    opacity: 0.8;
+    opacity: 1;
 }
 .grid-cell.current {
     outline: 1px solid rgba(255,255,255,0.2);
     outline-offset: -1px;
 }
 .grid-cell.on.current {
-    opacity: 1;
     outline: none;
+    filter: brightness(1.25);
 }
 
 /* Clickable cell states */
@@ -240,7 +255,7 @@ body {
     background: rgba(255,255,255,0.12);
 }
 .grid-cell.on:hover {
-    opacity: 0.9;
+    filter: brightness(1.15);
 }
 .grid-cell.just-toggled {
     animation: cell-pop 0.15s ease-out;
