@@ -163,7 +163,7 @@ const TRACKS = [
     synth: {
       osc:'sine',
       filterFreq:2000, rolloff:-12,
-      attack:0.3, decay:0.8, sustain:0.4, release:2.0, noteDur:'2n',
+      attack:0.3, decay:0.8, sustain:0.6, release:2.0, noteDur:'2n',
       polyphony: 4,
       fm: {
         harmonicity: 3.01,
@@ -632,18 +632,18 @@ const TUTORIAL_TASKS = {
         check: { param:'bass-weight', min: 0.7, max: 0.95 }
       },
       {
-        text: 'Max out the PUNCH',
-        hint: 'Drag PUNCH to 80%+. The drums need to slam.',
-        layer: 'drums',
-        type: 'param',
-        check: { param:'drums-punch', min: 0.7, max: 1.0 }
+        text: 'Shape the lead tone',
+        hint: 'Play with the BRIGHT fader until you find a sound you like.',
+        layer: 'lead',
+        type: 'param_moved',
+        check: { param:'lead-bright' }
       },
       {
-        text: 'Push BRIGHT to max',
-        hint: 'Drag BRIGHT to 75%+. The lead screams over the top.',
+        text: 'Add some space',
+        hint: 'Play with the ECHO fader until you find a vibe you like.',
         layer: 'lead',
-        type: 'param',
-        check: { param:'lead-bright', min: 0.7, max: 1.0 }
+        type: 'param_moved',
+        check: { param:'lead-echo' }
       }
     ]
   },
@@ -653,11 +653,11 @@ const TUTORIAL_TASKS = {
     description: 'Strip it back. One by one, the layers disappear into the night.',
     tasks: [
       {
-        text: 'Fade the lead out',
-        hint: 'Drag lead VOL down to zero. The melody fades away.',
-        layer: 'lead',
+        text: 'Fade the synth out',
+        hint: 'Drag synth VOL down to zero. The pads dissolve.',
+        layer: 'synth',
         type: 'volume',
-        check: { layer:'lead', min: 0, max: 0.08 }
+        check: { layer:'synth', min: 0, max: 0.08 }
       },
       {
         text: 'Kill the snare',
@@ -1110,7 +1110,7 @@ class MixEngine {
     this.bassLayer.synth.volume.value = -6;
 
     this.synthLayer = new MelodicLayer(track.synth, this.gains.synth);
-    this.synthLayer.synth.volume.value = -18;
+    this.synthLayer.synth.volume.value = -14;
 
     this.leadLayer = new MelodicLayer(track.lead, this.gains.lead);
     this.leadLayer.synth.volume.value = -6;
@@ -1271,9 +1271,19 @@ class TaskChecker {
   constructor(engine) {
     this.engine = engine;
     this.paramValues = {};
+    this.paramInitValues = {};
+    this.paramMoved = new Set();
+    this.paramLastMoveTime = {};  // timestamp of last slider movement per param
+    this.paramSettleMs = 3500;    // must be still for 3.5s to count as "settled"
   }
 
   updateParam(param, val) {
+    if (!(param in this.paramInitValues)) {
+      this.paramInitValues[param] = val;
+    } else if (val !== this.paramInitValues[param]) {
+      this.paramMoved.add(param);
+      this.paramLastMoveTime[param] = Date.now();
+    }
     this.paramValues[param] = val;
   }
 
@@ -1339,6 +1349,14 @@ class TaskChecker {
 
       case 'press_play': {
         return eng.isPlaying;
+      }
+
+      case 'param_moved': {
+        // Must have moved the slider AND then left it still for ~3.5 seconds
+        if (!this.paramMoved.has(c.param)) return false;
+        const lastMove = this.paramLastMoveTime[c.param];
+        if (!lastMove) return false;
+        return (Date.now() - lastMove) >= this.paramSettleMs;
       }
     }
     return false;
@@ -1809,6 +1827,8 @@ class BeatLabApp {
         this.taskChecker.updateParam(param, slider.value);
       }
     });
+    // Flag whether this section has settle-type tasks (need periodic re-check)
+    this._hasSettleTasks = tasks.tasks.some(t => t.type === 'param_moved');
 
     if (this.engine.isPlaying) {
       this.engine.buildSequences();
@@ -2044,15 +2064,28 @@ class BeatLabApp {
       }
     }
     // Slider-based tasks: glow the relevant fader
-    if (task.type === 'volume' || task.type === 'param') {
+    if (task.type === 'volume') {
+      const volParam = c.layer + '-vol';
+      const slider = this.sliders[volParam];
+      if (slider) slider.el.classList.add('ghost-glow');
+    } else if (task.type === 'param') {
       const slider = this.sliders[c.param];
       if (slider) slider.el.classList.add('ghost-glow');
     } else if (task.type === 'master_volume') {
       const masterEl = document.querySelector('.master-slider-track');
       if (masterEl) masterEl.classList.add('ghost-glow');
+    } else if (task.type === 'param_moved') {
+      // Glow the relevant fader for explore tasks too
+      const slider = this.sliders[c.param];
+      if (slider) slider.el.classList.add('ghost-glow');
     } else if (task.type === 'press_play') {
       const playBtn = document.getElementById('play-pause');
       if (playBtn) playBtn.classList.add('ghost-glow');
+    }
+
+    // Auto-switch to the right panel on mobile
+    if (task.layer && task.layer !== 'master' && window.innerWidth <= 600) {
+      this.setMobileActivePanel(task.layer);
     }
   }
 
@@ -2228,6 +2261,26 @@ class BeatLabApp {
         setTimeout(() => panel.classList.remove('hit'), 80);
       };
     });
+
+    // Mobile panel tabs
+    document.querySelectorAll('.panel-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const layer = tab.dataset.layer;
+        this.setMobileActivePanel(layer);
+      });
+    });
+
+    // Set initial mobile-active panel
+    this.setMobileActivePanel('drums');
+  }
+
+  setMobileActivePanel(layer) {
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('mobile-active'));
+    const tab = document.querySelector(`.panel-tab[data-layer="${layer}"]`);
+    const panel = document.querySelector(`.panel[data-layer="${layer}"]`);
+    if (tab) tab.classList.add('active');
+    if (panel) panel.classList.add('mobile-active');
   }
 
   changeTrack(dir) {
@@ -2283,6 +2336,15 @@ class BeatLabApp {
           this.lastStep = step;
           document.querySelectorAll('.grid-cell.current').forEach(c => c.classList.remove('current'));
           document.querySelectorAll(`.grid-cell[data-col="${step}"]`).forEach(c => c.classList.add('current'));
+        }
+
+        // Periodic re-check for "settle" tasks (param_moved waits for slider stillness)
+        if (this.tutorialMode && !this.enjoyPhase && this._hasSettleTasks) {
+          const now = Date.now();
+          if (!this._lastSettleCheck || now - this._lastSettleCheck > 500) {
+            this._lastSettleCheck = now;
+            this.checkTasks();
+          }
         }
 
         // Track bars during enjoy phase
