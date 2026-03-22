@@ -7,6 +7,7 @@ const Z16 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
 const N8  = [null,null,null,null,null,null,null,null];
 const N16 = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null];
 const LAYER_COLOURS = { bass: '#e8a849', drums: '#4a9eff', synth: '#c44aff', lead: '#4affb8' };
+const LAYER_NAMES = { bass: 'BASS', drums: 'DRUMS', synth: 'SYNTH', lead: 'LEAD', master: '' };
 const SECTIONS = ['intro','verse','chorus','drop','outro'];
 const DRUM_VOICES = ['clap','hat','snare','kick']; // top to bottom (kick at bottom)
 const DRUM_LABELS = ['CLAP','HI-HAT','SNARE','KICK'];
@@ -1666,6 +1667,7 @@ class BeatLabApp {
         newState = data.grid[row]?.[col];
       }
       cell.classList.toggle('on', !!newState);
+      if (newState) cell.classList.remove('ghost');
       cell.classList.add('just-toggled');
       setTimeout(() => cell.classList.remove('just-toggled'), 150);
 
@@ -1676,6 +1678,7 @@ class BeatLabApp {
       this.paintRow = row;
 
       this.checkTasks();
+      this.applyGhostHints();
     };
 
     const handlePaintMove = (targetCell) => {
@@ -1695,9 +1698,11 @@ class BeatLabApp {
           this.engine.toggleMelodicCell(layerName, r, c);
         }
         targetCell.classList.add('on');
+        targetCell.classList.remove('ghost');
         targetCell.classList.add('just-toggled');
         setTimeout(() => targetCell.classList.remove('just-toggled'), 150);
         this.checkTasks();
+        this.applyGhostHints();
       } else if (this.paintMode === 'off' && isOn) {
         if (layerName === 'drums') {
           this.engine.toggleDrumCell(DRUM_VOICES[r], c);
@@ -1866,13 +1871,19 @@ class BeatLabApp {
         check.textContent = states[i] ? '\u2713' : '';
 
         const textWrap = document.createElement('div');
-        const dot = document.createElement('span');
-        dot.className = 'task-layer-dot';
-        dot.style.backgroundColor = LAYER_COLOURS[task.layer] || '#888';
+
+        // Instrument label (DRUMS, BASS, etc.)
+        const layerName = LAYER_NAMES[task.layer];
+        if (layerName) {
+          const tag = document.createElement('span');
+          tag.className = 'task-layer-tag';
+          tag.style.color = LAYER_COLOURS[task.layer] || '#888';
+          tag.textContent = layerName;
+          textWrap.appendChild(tag);
+        }
 
         const text = document.createElement('div');
         text.className = 'task-text';
-        text.appendChild(dot);
         text.appendChild(document.createTextNode(task.text));
         textWrap.appendChild(text);
 
@@ -1915,13 +1926,19 @@ class BeatLabApp {
       check.textContent = states[i] ? '\u2713' : '';
 
       const textWrap = document.createElement('div');
-      const dot = document.createElement('span');
-      dot.className = 'task-layer-dot';
-      dot.style.backgroundColor = LAYER_COLOURS[task.layer] || '#888';
+
+      // Instrument label
+      const layerLabel = LAYER_NAMES[task.layer];
+      if (layerLabel) {
+        const tag = document.createElement('span');
+        tag.className = 'task-layer-tag';
+        tag.style.color = LAYER_COLOURS[task.layer] || '#888';
+        tag.textContent = layerLabel;
+        textWrap.appendChild(tag);
+      }
 
       const text = document.createElement('div');
       text.className = 'task-text';
-      text.appendChild(dot);
       text.appendChild(document.createTextNode(task.text));
       textWrap.appendChild(text);
 
