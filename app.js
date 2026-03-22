@@ -161,25 +161,25 @@ const TRACKS = [
       outro:  {kick:[1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0], snare:Z16, hat:[0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0], clap:Z16}
     }},
     synth: {
-      osc:'triangle',
-      filterFreq:2200, rolloff:-12,
-      attack:0.4, decay:0.8, sustain:0.7, release:2.5, noteDur:'2n',
-      chorus: { freq:0.8, delay:4.0, depth:0.3, wet:0.35 },
+      osc:'sine',
+      filterFreq:1400, rolloff:-12,
+      attack:0.8, decay:1.0, sustain:0.5, release:3.0, noteDur:'1m',
+      polyphony: 4,
       sections: {
         intro:  N8,
-        // Verse: Em pad, single sustained chord — atmosphere building
-        verse:  [['E3','G3','B3'],null,null,null,null,null,null,null],
-        // Chorus: Em → Am movement, chords breathe on the off-beat
-        chorus: [['E3','G3','B3'],null,null,null,['A3','C4','E4'],null,null,null],
-        // Drop: full chord progression — Em, Am, G, Am — driving harmonic movement
-        drop:   [['E3','G3','B3'],null,['A3','C4','E4'],null,['G3','B3','D4'],null,['A3','C4','E4'],null],
+        // Verse: single Em pad — barely there, just warmth
+        verse:  [['E3','B3'],null,null,null,null,null,null,null],
+        // Chorus: Em held, then Am on beat 5 — gentle movement
+        chorus: [['E3','B3'],null,null,null,['A3','E4'],null,null,null],
+        // Drop: chords shift every 2 beats — Em, C, G, Am
+        drop:   [['E3','B3'],null,['C3','G3'],null,['G3','D4'],null,['A3','E4'],null],
         // Outro: single chord dissolving
-        outro:  [['E3','G3','B3'],null,null,null,null,null,null,null]
+        outro:  [['E3','B3'],null,null,null,null,null,null,null]
       }
     },
     lead: {
-      osc:'fatsawtooth', oscCount:2, oscSpread:15,
-      filterFreq:4000, rolloff:-12,
+      osc:'sawtooth',
+      filterFreq:3500, rolloff:-12,
       attack:0.005, decay:0.1, sustain:0.05, release:0.08, noteDur:'16n', subdiv:'16n',
       sections: {
         intro:  N16,
@@ -1083,7 +1083,7 @@ class MixEngine {
     this.bassLayer.synth.volume.value = -6;
 
     this.synthLayer = new MelodicLayer(track.synth, this.gains.synth);
-    this.synthLayer.synth.volume.value = -12;
+    this.synthLayer.synth.volume.value = -18;
 
     this.leadLayer = new MelodicLayer(track.lead, this.gains.lead);
     this.leadLayer.synth.volume.value = -6;
