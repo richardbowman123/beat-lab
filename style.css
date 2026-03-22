@@ -107,16 +107,17 @@ body {
 /* Section pills preview */
 .onboard-sections-preview {
     display: flex; align-items: center; justify-content: center;
-    gap: 8px; flex-wrap: wrap; margin: 24px 0 28px;
+    gap: 6px; flex-wrap: nowrap; margin: 24px 0 28px;
 }
 .section-pill {
-    font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700;
-    letter-spacing: 0.06em; color: #fff; padding: 6px 14px;
+    font-family: 'Orbitron', sans-serif; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.04em; color: #fff; padding: 5px 10px;
     border-radius: 20px; background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.12);
+    white-space: nowrap;
 }
 .section-arrow {
-    color: rgba(255,255,255,0.2); font-size: 14px;
+    color: rgba(255,255,255,0.2); font-size: 12px; flex-shrink: 0;
 }
 
 /* Onboarding buttons */
