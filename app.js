@@ -412,8 +412,15 @@ const TUTORIAL_TASKS = {
   intro: {
     title: 'INTRO',
     subtitle: 'Building the Foundation',
-    description: 'Start with the basics: a two-step kick and off-beat hats to set the D&B tempo.',
+    description: 'Start with the basics: fire up the engine, then build a two-step kick and off-beat hats.',
     tasks: [
+      {
+        text: 'Press play to start the engine',
+        hint: 'Hit the play button at the bottom of the screen.',
+        layer: 'master',
+        type: 'press_play',
+        check: {}
+      },
       {
         text: 'Add kick on beat 1',
         hint: 'Click the KICK row at column 1. This is where the bar starts.',
@@ -1301,6 +1308,10 @@ class TaskChecker {
       case 'voice_mute': {
         return eng.isVoiceMuted(c.voice);
       }
+
+      case 'press_play': {
+        return eng.isPlaying;
+      }
     }
     return false;
   }
@@ -1408,16 +1419,15 @@ class BeatLabApp {
     this.enjoyLastBar = -1;
   }
 
-  async start() {
+  // Phase 1: init audio context and engine (runs during onboarding)
+  async initOnly() {
     await Tone.start();
-
     this.engine = new MixEngine();
     await this.engine.init();
+  }
 
-    document.getElementById('start-overlay').classList.add('fade-out');
-    setTimeout(() => document.getElementById('start-overlay').style.display = 'none', 600);
-    document.getElementById('app').classList.remove('hidden');
-
+  // Phase 2: show the game UI, start tutorial paused
+  launch() {
     this.buildSliders();
     this.buildMasterSlider();
     this.bindControls();
@@ -1429,8 +1439,8 @@ class BeatLabApp {
 
     this.updateTrackDisplay();
 
-    this.engine.play();
-    document.getElementById('play-pause').classList.add('playing');
+    // Start PAUSED — first task is "press play"
+    document.getElementById('play-pause').classList.remove('playing');
     this.startUILoop();
     this.updateSectionButtons();
   }
@@ -1926,6 +1936,8 @@ class BeatLabApp {
     document.querySelectorAll('.slider-unit.ghost-glow').forEach(c => c.classList.remove('ghost-glow'));
     const masterEl = document.querySelector('.master-slider-track');
     if (masterEl) masterEl.classList.remove('ghost-glow');
+    const playBtn = document.getElementById('play-pause');
+    if (playBtn) playBtn.classList.remove('ghost-glow');
   }
 
   applyGhostHints() {
@@ -1994,6 +2006,9 @@ class BeatLabApp {
     } else if (task.type === 'master_volume') {
       const masterEl = document.querySelector('.master-slider-track');
       if (masterEl) masterEl.classList.add('ghost-glow');
+    } else if (task.type === 'press_play') {
+      const playBtn = document.getElementById('play-pause');
+      if (playBtn) playBtn.classList.add('ghost-glow');
     }
   }
 
@@ -2135,6 +2150,7 @@ class BeatLabApp {
     document.getElementById('play-pause').addEventListener('click', () => {
       const playing = this.engine.togglePlay();
       document.getElementById('play-pause').classList.toggle('playing', playing);
+      this.checkTasks();
     });
 
     // Stop painting on mouseup/touchend
@@ -2250,11 +2266,40 @@ class BeatLabApp {
 
 // ===== INIT =====
 let app;
+
+// Start button → show onboarding (and init audio context in background)
 document.getElementById('start-btn').addEventListener('click', async () => {
+  // Fade out start screen, show onboarding
+  document.getElementById('start-overlay').classList.add('fade-out');
+  setTimeout(() => document.getElementById('start-overlay').style.display = 'none', 500);
+  document.getElementById('onboarding').classList.remove('hidden');
+
+  // Init audio context in background while user reads onboarding
   if (!app) {
     app = new BeatLabApp();
     try {
-      await app.start();
+      await app.initOnly();
+    } catch(e) {
+      console.error('Beat Lab init error:', e);
+    }
+  }
+});
+
+// Onboarding step 1 → step 2
+document.getElementById('onboard-next').addEventListener('click', () => {
+  document.getElementById('onboard-step1').classList.remove('active');
+  document.getElementById('onboard-step2').classList.add('active');
+});
+
+// Onboarding "Let's go" → launch the game
+document.getElementById('onboard-go').addEventListener('click', () => {
+  document.getElementById('onboarding').classList.add('fade-out');
+  setTimeout(() => document.getElementById('onboarding').style.display = 'none', 500);
+  document.getElementById('app').classList.remove('hidden');
+
+  if (app) {
+    try {
+      app.launch();
     } catch(e) {
       console.error('Beat Lab start error:', e);
       const msg = document.createElement('div');
