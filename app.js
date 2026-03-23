@@ -12,6 +12,47 @@ const SECTIONS = ['intro','verse','chorus','drop','outro'];
 const DRUM_VOICES = ['clap','hat','snare','kick']; // top to bottom (kick at bottom)
 const DRUM_LABELS = ['CLAP','HI-HAT','SNARE','KICK'];
 
+// ===== SCALES & COMPOSER NOTE CONFIG =====
+const SCALES = {
+  minor:      [0,2,3,5,7,8,10],
+  major:      [0,2,4,5,7,9,11],
+  pentatonic: [0,3,5,7,10],
+  blues:      [0,3,5,6,7,10],
+  chromatic:  [0,1,2,3,4,5,6,7,8,9,10,11]
+};
+
+const LAYER_NOTE_CONFIG = {
+  bass:  { root:'E', baseOctave:1, octaves:2, scale:'minor' },
+  synth: { root:'E', baseOctave:3, octaves:2, scale:'minor' },
+  lead:  { root:'E', baseOctave:4, octaves:2, scale:'minor' }
+};
+
+const NOTE_NAMES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+
+// Generate notes from a scale: returns array sorted high-to-low
+function generateScaleNotes(root, octave, numOctaves, scaleType) {
+  const rootIdx = NOTE_NAMES.indexOf(root);
+  if (rootIdx === -1) return [];
+  const intervals = SCALES[scaleType] || SCALES.minor;
+  const rootMidi = (octave + 1) * 12 + rootIdx;
+  const notes = [];
+  for (let o = 0; o < numOctaves; o++) {
+    for (const interval of intervals) {
+      const midi = rootMidi + o * 12 + interval;
+      const noteIdx = midi % 12;
+      const noteOct = Math.floor(midi / 12) - 1;
+      notes.push(NOTE_NAMES[noteIdx] + noteOct);
+    }
+  }
+  // Add the top root note
+  const topMidi = rootMidi + numOctaves * 12;
+  const topNoteIdx = topMidi % 12;
+  const topNoteOct = Math.floor(topMidi / 12) - 1;
+  notes.push(NOTE_NAMES[topNoteIdx] + topNoteOct);
+  // Sort high to low by MIDI value
+  return notes.sort((a, b) => noteToMidi(b) - noteToMidi(a));
+}
+
 // ===== MIDI NOTE HELPER =====
 function noteToMidi(n) {
   const m = n.match(/^([A-G])(b|#)?(\d+)$/);
@@ -766,6 +807,15 @@ class DrumKit {
     this.snareBody.volume.value = -8 + v*5;
     this.snareNoise.volume.value = -8 + v*5;
   }
+  setSnap(v) {
+    // Tighten hat and snare decay: at 0 = default, at 1 = very tight
+    const hatDecay = 0.04 * (1 - v * 0.7); // 0.04 down to 0.012
+    const snareDecay = 0.15 * (1 - v * 0.6); // 0.15 down to 0.06
+    this.hatNoise.envelope.decay = hatDecay;
+    this.hatNoise.envelope.release = hatDecay * 0.2;
+    this.snareNoise.envelope.decay = snareDecay;
+    this.snareNoise.envelope.release = snareDecay * 0.4;
+  }
   dispose() {
     [this.kickSub,this.kickClick,this.kickDist,
      this.snareBody,this.snareNoise,this.snareBP,
@@ -775,40 +825,40 @@ class DrumKit {
 }
 
 
-// ===== MELODIC LAYER (enhanced: fat oscillators, distortion, chorus, sub) =====
+// ===== MELODIC LAYER (enhanced: fat oscillators, distortion, chorus, vibrato, sub) =====
 class MelodicLayer {
   constructor(config, dest) {
     this.extras = []; // extra nodes for disposal
 
-    // Signal chain: synth → [distortion] → filter → [chorus] → dest
+    // Signal chain: synth → distortion → filter → chorus → vibrato → dest
+    // All effect nodes always created (transparent at 0) so sliders can control them
+
+    // Vibrato (end of chain, before dest)
+    this.vibrato = new Tone.Vibrato({ frequency: 5, depth: 0, wet: 0 });
+    this.vibrato.connect(dest);
+    this.extras.push(this.vibrato);
+
+    // Chorus (after filter, before vibrato)
+    this.chorus = new Tone.Chorus({
+      frequency: config.chorus ? config.chorus.freq||1.5 : 1.5,
+      delayTime: config.chorus ? config.chorus.delay||3.5 : 3.5,
+      depth: config.chorus ? config.chorus.depth||0.7 : 0.7,
+      wet: config.chorus ? config.chorus.wet||0.5 : 0
+    }).start();
+    this.chorus.connect(this.vibrato);
+    this.extras.push(this.chorus);
+
+    // Filter
     this.filter = new Tone.Filter({
       frequency: config.filterFreq||2000, type:'lowpass',
       rolloff: config.rolloff||-12, Q: config.filterQ||1
     });
+    this.filter.connect(this.chorus);
 
-    // Optional chorus (after filter)
-    let chainEnd = dest;
-    if (config.chorus) {
-      this.chorus = new Tone.Chorus({
-        frequency: config.chorus.freq||1.5,
-        delayTime: config.chorus.delay||3.5,
-        depth: config.chorus.depth||0.7,
-        wet: config.chorus.wet||0.5
-      }).start();
-      this.chorus.connect(dest);
-      chainEnd = this.chorus;
-      this.extras.push(this.chorus);
-    }
-    this.filter.connect(chainEnd);
-
-    // Optional distortion (before filter)
-    let synthTarget = this.filter;
-    if (config.distortion) {
-      this.dist = new Tone.Distortion(config.distortion);
-      this.dist.connect(this.filter);
-      synthTarget = this.dist;
-      this.extras.push(this.dist);
-    }
+    // Distortion (before filter)
+    this.dist = new Tone.Distortion(config.distortion || 0);
+    this.dist.connect(this.filter);
+    this.extras.push(this.dist);
 
     // Main synth — supports FM synthesis and fat oscillators
     const envConfig = {
@@ -816,9 +866,10 @@ class MelodicLayer {
       sustain: config.sustain||0.3, release: config.release||0.2
     };
 
+    let SynthClass, synthOpts;
     if (config.fm) {
-      // FM synthesis — rich, evolving tones (Rhodes, bells, glassy pads)
-      this.synth = new Tone.PolySynth(Tone.FMSynth, {
+      SynthClass = Tone.FMSynth;
+      synthOpts = {
         maxPolyphony: config.polyphony||8,
         harmonicity: config.fm.harmonicity||2,
         modulationIndex: config.fm.modulationIndex||3,
@@ -831,21 +882,30 @@ class MelodicLayer {
           sustain: config.fm.modSustain||0.1,
           release: config.fm.modRelease||0.8
         }
-      });
+      };
     } else {
-      // Standard oscillator — supports fat oscillators via oscCount/oscSpread
+      SynthClass = Tone.Synth;
       const oscConfig = { type: config.osc||'sawtooth' };
       if (config.oscCount) {
         oscConfig.count = config.oscCount;
         oscConfig.spread = config.oscSpread||20;
       }
-      this.synth = new Tone.PolySynth(Tone.Synth, {
+      synthOpts = {
         maxPolyphony: config.polyphony||8,
         oscillator: oscConfig,
         envelope: envConfig
-      });
+      };
     }
-    this.synth.connect(synthTarget);
+
+    this.synth = new Tone.PolySynth(SynthClass, synthOpts);
+    this.synth.connect(this.dist);
+
+    // Detune voice — second synth for unison detune effect
+    // Same config, starts silent. Slider brings it in with pitch offset.
+    this.detuneActive = false;
+    this.detuneSynth = new Tone.PolySynth(SynthClass, JSON.parse(JSON.stringify(synthOpts)));
+    this.detuneSynth.connect(this.dist);
+    this.detuneSynth.volume.value = -Infinity;
 
     // Optional sub-bass layer (clean sine, bypasses distortion/filter)
     this.subSynth = null;
@@ -866,18 +926,45 @@ class MelodicLayer {
     this.noteDur = config.noteDur||'8n';
   }
 
-  // Play note(s) — triggers main synth + sub if present
+  // Play note(s) — triggers main synth + detune voice + sub if present
   play(note, duration, time) {
     const notes = Array.isArray(note) ? note : [note];
     this.synth.triggerAttackRelease(notes, duration, time);
+    if (this.detuneActive) this.detuneSynth.triggerAttackRelease(notes, duration, time);
     if (this.subSynth) this.subSynth.triggerAttackRelease(notes, duration, time);
   }
 
   setFilterFreq(v) {
     this.filter.frequency.value = 80 * Math.pow(150, v); // 80Hz to 12kHz
   }
+  setDrive(v) {
+    this.dist.distortion = v * 0.8; // 0 to 0.8
+  }
+  setWidth(v) {
+    this.chorus.wet.value = v * 0.8; // 0 to 0.8
+  }
+  setVibrato(v) {
+    this.vibrato.depth.value = v * 0.5; // 0 to 0.5
+    this.vibrato.wet.value = v > 0.01 ? 1 : 0;
+    this.vibrato.frequency.value = 3 + v * 6; // 3Hz to 9Hz
+  }
+  setDetune(v) {
+    // Symmetric unison detune: main voice goes down, detune voice goes up
+    const cents = v * 25; // 0 to ±25 cents
+    if (v < 0.01) {
+      this.detuneActive = false;
+      this.synth.detune.value = 0;
+      this.detuneSynth.volume.value = -Infinity;
+    } else {
+      this.detuneActive = true;
+      this.synth.detune.value = -cents;
+      this.detuneSynth.detune.value = cents;
+      // Detune voice at -6dB below main to add thickness without doubling volume
+      this.detuneSynth.volume.value = this.synth.volume.value - 6;
+    }
+  }
   dispose() {
-    this.synth.dispose(); this.filter.dispose();
+    this.synth.dispose(); this.detuneSynth.dispose(); this.filter.dispose();
     if (this.subSynth) this.subSynth.dispose();
     this.extras.forEach(n=>n.dispose());
   }
@@ -893,6 +980,11 @@ class MixEngine {
     this.sequences = [];
     this.volumes = { bass:0.75, drums:0.75, synth:0.75, lead:0.75 };
     this.masterVolume = 0.8;
+    this.composerMode = false;
+    this.sectionPatterns = {}; // { sectionName: deep copy of livePatterns }
+    this.octaveOffsets = { bass: 0, synth: 0, lead: 0 };
+    this.arpeggiator = { enabled: false, mode: 'up', rate: '16n' };
+    this.ARP_MODES = ['off', 'up', 'down', 'updown', 'random'];
 
     // Master gain → limiter → destination
     this.masterGain = new Tone.Gain(0.8);
@@ -981,6 +1073,32 @@ class MixEngine {
     };
   }
 
+  // Save current livePatterns to sectionPatterns map (composer mode)
+  saveCurrentSection() {
+    if (!this.composerMode) return;
+    this.sectionPatterns[this.currentSection] = JSON.parse(JSON.stringify(this.livePatterns));
+  }
+
+  // Load section from sectionPatterns or create blank (composer mode)
+  loadComposerSection(sec) {
+    if (this.sectionPatterns[sec]) {
+      this.livePatterns = JSON.parse(JSON.stringify(this.sectionPatterns[sec]));
+    } else {
+      // Create blank patterns
+      this.livePatterns = {
+        bass: new Array(16).fill(null),
+        drums: {
+          kick: new Array(16).fill(0),
+          snare: new Array(16).fill(0),
+          hat: new Array(16).fill(0),
+          clap: new Array(16).fill(0)
+        },
+        synth: new Array(16).fill(null),
+        lead: new Array(16).fill(null)
+      };
+    }
+  }
+
   // Toggle a drum cell on/off
   toggleDrumCell(voice, col) {
     if (!this.livePatterns.drums) return;
@@ -993,12 +1111,11 @@ class MixEngine {
   // noteIndex = row index in the note list, col = 0-15 column
   toggleMelodicCell(layerName, noteIndex, col) {
     if (!this.livePatterns[layerName]) return;
-    const track = TRACKS[this.currentTrackIdx];
-    const allNotes = getLayerNotes(track[layerName]);
+    const allNotes = this.getNotesForLayer(layerName);
     const note = allNotes[noteIndex];
     if (!note) return;
 
-    const is16 = layerName === 'lead';
+    const is16 = this.composerMode || layerName === 'lead';
     const stepIdx = is16 ? col : Math.floor(col / 2);
 
     if (!is16 && col % 2 !== 0) return; // 8-step layers: only even cols
@@ -1030,6 +1147,19 @@ class MixEngine {
     this.rebuildLayerSequence(layerName);
   }
 
+  // Get notes for a layer — composer mode uses scale generation, tutorial uses track data
+  getNotesForLayer(layerName) {
+    if (this.composerMode) {
+      const config = LAYER_NOTE_CONFIG[layerName];
+      if (!config) return [];
+      const offset = this.octaveOffsets[layerName] || 0;
+      return generateScaleNotes(config.root, config.baseOctave + offset, config.octaves, config.scale);
+    } else {
+      const track = TRACKS[this.currentTrackIdx];
+      return getLayerNotes(track[layerName]);
+    }
+  }
+
   // Rebuild just one layer's sequence while playing
   rebuildLayerSequence(layerName) {
     // Find and dispose old sequence for this layer
@@ -1040,18 +1170,28 @@ class MixEngine {
     }
 
     const track = TRACKS[this.currentTrackIdx];
+    const cm = this.composerMode;
     let seq;
 
     switch(layerName) {
       case 'bass': {
         const bp = this.livePatterns.bass;
-        const bd = track.bass.noteDur||'8n';
-        seq = new Tone.Sequence((t,n) => {
+        const bd = cm ? '16n' : (track.bass.noteDur||'8n');
+        const subdiv = cm ? '16n' : '8n';
+        seq = new Tone.Sequence((t,step) => {
+          // In composer mode, step is the pattern element; handle NoteEvent objects
+          const n = step;
           if (n && this.volumes.bass > 0) {
-            this.bassLayer.play(n, bd, t);
-            if (this.noteCallbacks.bass) Tone.Draw.schedule(()=>this.noteCallbacks.bass(), t);
+            if (typeof n === 'object' && n.notes) {
+              // NoteEvent — use its dur
+              const durSec = Tone.Time('16n').toSeconds() * n.dur;
+              this.bassLayer.play(n.notes, durSec, t);
+            } else if (n !== '__cont__') {
+              this.bassLayer.play(n, bd, t);
+            }
+            if (n !== '__cont__' && this.noteCallbacks.bass) Tone.Draw.schedule(()=>this.noteCallbacks.bass(), t);
           }
-        }, bp, '8n');
+        }, bp, subdiv);
         break;
       }
       case 'drums': {
@@ -1070,21 +1210,58 @@ class MixEngine {
       }
       case 'synth': {
         const sp = this.livePatterns.synth;
-        const sd = track.synth.noteDur||'2n';
-        seq = new Tone.Sequence((t,n) => {
+        const sd = cm ? '16n' : (track.synth.noteDur||'2n');
+        const subdiv = cm ? '16n' : '8n';
+        seq = new Tone.Sequence((t,step) => {
+          const n = step;
           if (n && this.volumes.synth > 0) {
-            this.synthLayer.play(n, sd, t);
-            if (this.noteCallbacks.synth) Tone.Draw.schedule(()=>this.noteCallbacks.synth(), t);
+            if (typeof n === 'object' && n.notes) {
+              const durSec = Tone.Time('16n').toSeconds() * n.dur;
+              this.synthLayer.play(n.notes, durSec, t);
+            } else if (n !== '__cont__') {
+              this.synthLayer.play(n, sd, t);
+            }
+            if (n !== '__cont__' && this.noteCallbacks.synth) Tone.Draw.schedule(()=>this.noteCallbacks.synth(), t);
           }
-        }, sp, '8n');
+        }, sp, subdiv);
         break;
       }
       case 'lead': {
         const lp = this.livePatterns.lead;
-        const ld = track.lead.noteDur||'8n';
-        seq = new Tone.Sequence((t,n) => {
+        const ld = cm ? '16n' : (track.lead.noteDur||'8n');
+        const arp = this.arpeggiator;
+        seq = new Tone.Sequence((t,step) => {
+          const n = step;
           if (n && this.volumes.lead > 0) {
-            this.leadLayer.play(n, ld, t);
+            let notes, dur;
+            if (typeof n === 'object' && n.notes) {
+              notes = n.notes;
+              dur = Tone.Time('16n').toSeconds() * n.dur;
+            } else if (n !== '__cont__') {
+              notes = Array.isArray(n) ? n : [n];
+              dur = ld;
+            } else {
+              return; // skip continuation
+            }
+
+            // Arpeggiator
+            if (arp.enabled && notes.length > 1) {
+              const sorted = [...notes].sort((a,b) => noteToMidi(a) - noteToMidi(b));
+              let sequence;
+              switch(arp.mode) {
+                case 'up': sequence = sorted; break;
+                case 'down': sequence = sorted.reverse(); break;
+                case 'updown': sequence = [...sorted, ...sorted.slice(1,-1).reverse()]; break;
+                case 'random': sequence = sorted.sort(() => Math.random() - 0.5); break;
+                default: sequence = sorted;
+              }
+              const stepDur = Tone.Time(arp.rate).toSeconds();
+              sequence.forEach((note, i) => {
+                this.leadLayer.play(note, stepDur * 0.8, t + i * stepDur);
+              });
+            } else {
+              this.leadLayer.play(notes, dur, t);
+            }
             if (this.noteCallbacks.lead) Tone.Draw.schedule(()=>this.noteCallbacks.lead(), t);
           }
         }, lp, '16n');
@@ -1115,7 +1292,11 @@ class MixEngine {
     this.leadLayer = new MelodicLayer(track.lead, this.gains.lead);
     this.leadLayer.synth.volume.value = -6;
 
-    this.copyPatternToLive();
+    if (this.composerMode) {
+      this.loadComposerSection(this.currentSection);
+    } else {
+      this.copyPatternToLive();
+    }
     this.buildSequences();
     if (this.isPlaying) this.startSequences();
   }
@@ -1123,47 +1304,13 @@ class MixEngine {
   buildSequences() {
     this.stopSequences();
     this.sequences = [];
-    const track = TRACKS[this.currentTrackIdx];
-
-    // Bass (8 steps at 8n) — from livePatterns
-    const bp = this.livePatterns.bass, bd = track.bass.noteDur||'8n';
-    this.sequences.push(new Tone.Sequence((t,n) => {
-      if (n && this.volumes.bass > 0) {
-        this.bassLayer.play(n, bd, t);
-        if (this.noteCallbacks.bass) Tone.Draw.schedule(()=>this.noteCallbacks.bass(), t);
-      }
-    }, bp, '8n'));
-
-    // Drums (16 steps at 16n) — from livePatterns
-    const ds = this.livePatterns.drums;
-    const mv = this.mutedVoices;
-    this.sequences.push(new Tone.Sequence((t,i) => {
-      if (this.volumes.drums === 0) return;
-      if (ds.kick[i] && !mv.has('kick')) this.drumKit.triggerKick(t);
-      if (ds.snare[i] && !mv.has('snare')) this.drumKit.triggerSnare(t);
-      if (ds.hat[i] && !mv.has('hat')) this.drumKit.triggerHat(t);
-      if (ds.clap[i] && !mv.has('clap')) this.drumKit.triggerClap(t);
-      if ((ds.kick[i]||ds.snare[i]||ds.hat[i]||ds.clap[i]) && this.noteCallbacks.drums)
-        Tone.Draw.schedule(()=>this.noteCallbacks.drums(), t);
-    }, [...Array(16).keys()], '16n'));
-
-    // Synth (8 steps at 8n) — from livePatterns
-    const sp = this.livePatterns.synth, sd = track.synth.noteDur||'2n';
-    this.sequences.push(new Tone.Sequence((t,n) => {
-      if (n && this.volumes.synth > 0) {
-        this.synthLayer.play(n, sd, t);
-        if (this.noteCallbacks.synth) Tone.Draw.schedule(()=>this.noteCallbacks.synth(), t);
-      }
-    }, sp, '8n'));
-
-    // Lead (16 steps at 16n) — from livePatterns
-    const lp = this.livePatterns.lead, ld = track.lead.noteDur||'8n';
-    this.sequences.push(new Tone.Sequence((t,n) => {
-      if (n && this.volumes.lead > 0) {
-        this.leadLayer.play(n, ld, t);
-        if (this.noteCallbacks.lead) Tone.Draw.schedule(()=>this.noteCallbacks.lead(), t);
-      }
-    }, lp, '16n'));
+    // Temporarily suppress auto-start so we can start all at once
+    const wasPlaying = this.isPlaying;
+    this.isPlaying = false;
+    ['bass', 'drums', 'synth', 'lead'].forEach(layer => {
+      this.rebuildLayerSequence(layer);
+    });
+    this.isPlaying = wasPlaying;
   }
 
   startSequences() { this.sequences.forEach(s => s.start(0)); }
@@ -1184,8 +1331,14 @@ class MixEngine {
   togglePlay() { if (this.isPlaying) this.stop(); else this.play(); return this.isPlaying; }
 
   setSection(sec) {
-    this.currentSection = sec;
-    this.copyPatternToLive();
+    if (this.composerMode) {
+      this.saveCurrentSection();
+      this.currentSection = sec;
+      this.loadComposerSection(sec);
+    } else {
+      this.currentSection = sec;
+      this.copyPatternToLive();
+    }
     if (this.isPlaying) { this.buildSequences(); this.startSequences(); }
   }
 
@@ -1215,6 +1368,13 @@ class MixEngine {
       case 'synth-space': this.reverb.wet.value = val * 0.6; break;
       case 'lead-bright': if(this.leadLayer) this.leadLayer.setFilterFreq(val); break;
       case 'lead-echo': this.delay.wet.value = val*0.5; this.delay.feedback.value = val*0.4; break;
+      // 4th slider params
+      case 'bass-drive': if(this.bassLayer) this.bassLayer.setDrive(val); break;
+      case 'drums-snap': this.drumKit.setSnap(val); break;
+      case 'synth-width': if(this.synthLayer) this.synthLayer.setWidth(val); break;
+      case 'lead-vibrato': if(this.leadLayer) this.leadLayer.setVibrato(val); break;
+      case 'synth-detune': if(this.synthLayer) this.synthLayer.setDetune(val); break;
+      case 'lead-detune': if(this.leadLayer) this.leadLayer.setDetune(val); break;
     }
   }
 
@@ -1225,22 +1385,38 @@ class MixEngine {
   }
 
   // Get melodic grid data from livePatterns
+  // Returns { notes, grid } where grid cells are:
+  //   0 = empty, 1 = note-start (or single step), 2 = continuation
   getMelodicGrid(layerName) {
-    const track = TRACKS[this.currentTrackIdx];
-    const layerData = track[layerName];
-    const allNotes = getLayerNotes(layerData);
+    const allNotes = this.getNotesForLayer(layerName);
     if (allNotes.length === 0) return { notes: [], grid: [] };
 
     const pattern = this.livePatterns[layerName];
-    const is16 = layerName === 'lead';
+    const is16 = this.composerMode || layerName === 'lead';
     const cols = 16;
 
     const grid = allNotes.map(note => {
       const row = new Array(cols).fill(0);
       pattern.forEach((step, i) => {
         if (!step) return;
+        if (step === '__cont__') return; // handled by the parent NoteEvent
         const col = is16 ? i : i * 2;
         if (col >= cols) return;
+
+        // NoteEvent object (variable length)
+        if (typeof step === 'object' && step.notes) {
+          if (step.notes.includes(note)) {
+            row[col] = 1; // note start
+            // Mark continuation cells
+            for (let d = 1; d < step.dur; d++) {
+              const contCol = is16 ? (i + d) : ((i + d) * 2);
+              if (contCol < cols) row[contCol] = 2;
+            }
+          }
+          return;
+        }
+
+        // Legacy format (string or array)
         const stepNotes = Array.isArray(step) ? step : [step];
         if (stepNotes.includes(note)) row[col] = 1;
       });
@@ -1452,6 +1628,7 @@ class BeatLabApp {
     this.lastStep = -1;
     this.taskChecker = null;
     this.tutorialMode = false;
+    this.composerMode = false;
     this.currentTutorialSection = 'intro';
     this.taskStates = {}; // { sectionName: [bool, bool, ...] }
     this.completedSections = new Set();
@@ -1463,6 +1640,15 @@ class BeatLabApp {
     this.enjoyBarsTarget = 4;
     this.enjoyBarsPlayed = 0;
     this.enjoyLastBar = -1;
+    // Drag-to-extend state
+    this.dragging = false;
+    this.dragLayer = null;
+    this.dragRow = null;
+    this.dragStartCol = null;
+    this.dragCurrentCol = null;
+    this.dragDirection = null; // null, 'horizontal', 'vertical' (for mobile disambiguation)
+    this.dragStartX = 0;
+    this.dragStartY = 0;
   }
 
   // Phase 1: init audio context and engine (runs during onboarding)
@@ -1491,6 +1677,56 @@ class BeatLabApp {
     if (mobilePlay) mobilePlay.classList.remove('playing');
     this.startUILoop();
     this.updateSectionButtons();
+  }
+
+  // Composer mode entry point — skip tutorial, blank canvas, all sections unlocked
+  startComposerMode() {
+    this.composerMode = true;
+    this.tutorialMode = false;
+    this.engine.composerMode = true;
+
+    this.buildSliders();
+    this.buildMasterSlider();
+    this.bindControls();
+
+    // Load track 0 (Deep House) as default synth engine
+    this.engine.loadTrack(0);
+
+    // Show octave controls and arp button
+    document.querySelectorAll('.octave-controls').forEach(el => el.classList.remove('hidden'));
+    document.querySelector('.arp-btn').classList.remove('hidden');
+
+    // Hide tutorial UI
+    document.getElementById('task-panel').style.display = 'none';
+    document.getElementById('task-drawer').style.display = 'none';
+    document.getElementById('mobile-task-banner').style.display = 'none';
+    document.getElementById('app').classList.add('composer-mode');
+
+    // Unlock all sections
+    document.querySelectorAll('.sec-btn').forEach(btn => {
+      btn.classList.remove('locked');
+    });
+
+    this.updateTrackDisplay();
+    this.updateOctaveDisplays();
+
+    // Start paused
+    document.getElementById('play-pause').classList.remove('playing');
+    const mobilePlay = document.getElementById('mobile-play');
+    if (mobilePlay) mobilePlay.classList.remove('playing');
+
+    this.buildAllGrids();
+    this.startUILoop();
+    this.updateSectionButtons();
+  }
+
+  updateOctaveDisplays() {
+    ['bass', 'synth', 'lead'].forEach(layer => {
+      const config = LAYER_NOTE_CONFIG[layer];
+      const offset = this.engine.octaveOffsets[layer] || 0;
+      const display = document.querySelector(`.oct-display[data-layer="${layer}"]`);
+      if (display) display.textContent = 'OCT ' + (config.baseOctave + offset);
+    });
   }
 
   buildMasterSlider() {
@@ -1527,16 +1763,22 @@ class BeatLabApp {
     const params = {
       bass:  [{param:'bass-vol', label:'VOL', init:0.75, isVol:true},
               {param:'bass-tone', label:'TONE', init:0.5},
-              {param:'bass-weight', label:'WEIGHT', init:0.5}],
+              {param:'bass-weight', label:'WEIGHT', init:0.5},
+              {param:'bass-drive', label:'DRIVE', init:0}],
       drums: [{param:'drums-vol', label:'VOL', init:0.75, isVol:true},
               {param:'drums-punch', label:'PUNCH', init:0.5},
-              {param:'drums-groove', label:'GROOVE', init:0.15}],
+              {param:'drums-groove', label:'GROOVE', init:0.15},
+              {param:'drums-snap', label:'SNAP', init:0}],
       synth: [{param:'synth-vol', label:'VOL', init:0.75, isVol:true},
               {param:'synth-colour', label:'COLOUR', init:0.5},
-              {param:'synth-space', label:'SPACE', init:0.2}],
+              {param:'synth-space', label:'SPACE', init:0.2},
+              {param:'synth-width', label:'WIDTH', init:0},
+              {param:'synth-detune', label:'DETUNE', init:0}],
       lead:  [{param:'lead-vol', label:'VOL', init:0.75, isVol:true},
               {param:'lead-bright', label:'BRIGHT', init:0.5},
-              {param:'lead-echo', label:'ECHO', init:0.15}]
+              {param:'lead-echo', label:'ECHO', init:0.15},
+              {param:'lead-vibrato', label:'VIBRATO', init:0},
+              {param:'lead-detune', label:'DETUNE', init:0}]
     };
 
     for (const [layer, defs] of Object.entries(params)) {
@@ -1649,24 +1891,36 @@ class BeatLabApp {
 
   buildMelodicGrid(layerName) {
     const container = document.querySelector(`.grid[data-layer="${layerName}"]`);
+    const gridWrap = container.parentElement;
     container.innerHTML = '';
     const data = this.engine.getMelodicGrid(layerName);
     const rows = data.notes.length;
-    const is16 = layerName === 'lead';
+    const is16 = this.composerMode || layerName === 'lead';
 
     if (rows === 0) {
       container.style.gridTemplateRows = '1fr';
+      container.classList.remove('fixed-rows');
+      gridWrap.classList.remove('scrollable');
       this.gridCells[layerName] = [];
       return;
     }
 
-    container.style.gridTemplateRows = `auto repeat(${rows}, 1fr)`;
+    // Composer mode: fixed row height, scrollable
+    if (this.composerMode) {
+      container.classList.add('fixed-rows');
+      container.style.gridTemplateRows = `auto repeat(${rows}, 22px)`;
+      gridWrap.classList.add('scrollable');
+    } else {
+      container.classList.remove('fixed-rows');
+      container.style.gridTemplateRows = `auto repeat(${rows}, 1fr)`;
+      gridWrap.classList.remove('scrollable');
+    }
+
     this.gridCells[layerName] = [];
 
     // Beat number header row
     container.appendChild(this.createBeatNumberCorner());
-    const cols = is16 ? 16 : 16; // always 16 visual columns
-    for (let c = 0; c < cols; c++) {
+    for (let c = 0; c < 16; c++) {
       container.appendChild(this.createBeatNumber(c, !is16 && c % 2 !== 0));
     }
 
@@ -1683,19 +1937,40 @@ class BeatLabApp {
         cell.dataset.col = c;
         cell.dataset.row = r;
         cell.dataset.note = data.notes[r];
-        if (data.grid[r][c]) cell.classList.add('on');
 
-        // Grey out odd columns for 8-step layers
+        const cellState = data.grid[r][c];
+        if (cellState === 1) {
+          cell.classList.add('on', 'note-start');
+          // Check if it's also the end (next cell is not continuation)
+          if (data.grid[r][c+1] !== 2) cell.classList.add('note-end');
+        } else if (cellState === 2) {
+          cell.classList.add('on', 'note-cont');
+          if (data.grid[r][c+1] !== 2) cell.classList.add('note-end');
+        }
+
+        // Grey out odd columns for 8-step layers (tutorial mode only)
         if (!is16 && c % 2 !== 0) {
           cell.classList.add('disabled');
         } else {
-          this.bindCellClick(cell, layerName, r, c);
+          if (this.composerMode) {
+            this.bindComposerCellClick(cell, layerName, r, c);
+          } else {
+            this.bindCellClick(cell, layerName, r, c);
+          }
         }
 
         container.appendChild(cell);
         rowCells.push(cell);
       }
       this.gridCells[layerName].push(rowCells);
+    }
+
+    // Scroll to middle of grid in composer mode
+    if (this.composerMode && rows > 6) {
+      requestAnimationFrame(() => {
+        const scrollTarget = (rows * 22 / 2) - (gridWrap.clientHeight / 2);
+        gridWrap.scrollTop = Math.max(0, scrollTarget);
+      });
     }
   }
 
@@ -1777,6 +2052,181 @@ class BeatLabApp {
     }, {passive:false});
   }
 
+  // Composer mode cell click — supports click-to-place and drag-to-extend
+  bindComposerCellClick(cell, layerName, row, col) {
+    const handleDown = (e, clientX, clientY) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const pattern = this.engine.livePatterns[layerName];
+      const step = pattern[col];
+
+      // Click on continuation cell → truncate parent note
+      if (step === '__cont__') {
+        // Find the parent NoteEvent
+        for (let i = col - 1; i >= 0; i--) {
+          const s = pattern[i];
+          if (s && typeof s === 'object' && s.notes) {
+            // Truncate: set dur so it ends before this col
+            s.dur = col - i;
+            // Clear continuation markers from col onwards
+            for (let j = col; j < 16; j++) {
+              if (pattern[j] === '__cont__') pattern[j] = null;
+              else break;
+            }
+            break;
+          }
+          if (s !== '__cont__' && s !== null) break;
+        }
+        this.engine.rebuildLayerSequence(layerName);
+        this.buildMelodicGrid(layerName);
+        return;
+      }
+
+      // Click on note-start → remove note
+      if (step && typeof step === 'object' && step.notes) {
+        const allNotes = this.engine.getNotesForLayer(layerName);
+        const note = allNotes[row];
+        if (step.notes.includes(note)) {
+          // Remove this note from the event
+          const filtered = step.notes.filter(n => n !== note);
+          if (filtered.length === 0) {
+            // Remove entire event + continuations
+            pattern[col] = null;
+            for (let j = col + 1; j < 16; j++) {
+              if (pattern[j] === '__cont__') pattern[j] = null;
+              else break;
+            }
+          } else {
+            step.notes = filtered;
+          }
+          this.engine.rebuildLayerSequence(layerName);
+          this.buildMelodicGrid(layerName);
+          return;
+        }
+      }
+
+      // Click on existing simple note → remove it
+      if (step !== null && step !== '__cont__') {
+        const allNotes = this.engine.getNotesForLayer(layerName);
+        const note = allNotes[row];
+        const stepNotes = Array.isArray(step) ? step : [step];
+        if (stepNotes.includes(note)) {
+          // Remove
+          if (Array.isArray(step)) {
+            const filtered = step.filter(n => n !== note);
+            pattern[col] = filtered.length === 0 ? null : (filtered.length === 1 ? filtered[0] : filtered);
+          } else {
+            pattern[col] = null;
+          }
+          this.engine.rebuildLayerSequence(layerName);
+          this.buildMelodicGrid(layerName);
+          return;
+        }
+      }
+
+      // Empty cell → place note and start drag
+      const allNotes = this.engine.getNotesForLayer(layerName);
+      const note = allNotes[row];
+      if (!note) return;
+
+      // Place a new NoteEvent with dur=1
+      if (pattern[col] === null) {
+        pattern[col] = { notes: [note], dur: 1 };
+      } else if (typeof pattern[col] === 'object' && pattern[col].notes) {
+        // Add note to existing event
+        if (!pattern[col].notes.includes(note)) pattern[col].notes.push(note);
+      } else {
+        // Convert legacy string to NoteEvent
+        const existing = Array.isArray(pattern[col]) ? pattern[col] : [pattern[col]];
+        if (!existing.includes(note)) existing.push(note);
+        pattern[col] = { notes: existing, dur: 1 };
+      }
+
+      this.engine.rebuildLayerSequence(layerName);
+      this.buildMelodicGrid(layerName);
+
+      // Start drag-to-extend
+      this.dragging = true;
+      this.dragLayer = layerName;
+      this.dragRow = row;
+      this.dragStartCol = col;
+      this.dragCurrentCol = col;
+      this.dragStartX = clientX;
+      this.dragStartY = clientY;
+      this.dragDirection = null;
+    };
+
+    cell.addEventListener('mousedown', (e) => handleDown(e, e.clientX, e.clientY));
+    cell.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      handleDown(e, touch.clientX, touch.clientY);
+    }, {passive:false});
+  }
+
+  // Handle drag-to-extend (called from global mousemove/touchmove)
+  handleComposerDrag(clientX, clientY) {
+    if (!this.dragging || !this.dragLayer) return;
+
+    // Direction disambiguation for mobile (10px threshold)
+    if (this.dragDirection === null) {
+      const dx = Math.abs(clientX - this.dragStartX);
+      const dy = Math.abs(clientY - this.dragStartY);
+      if (dx > 10 || dy > 10) {
+        this.dragDirection = dx > dy ? 'horizontal' : 'vertical';
+      }
+      if (this.dragDirection !== 'horizontal') return;
+    }
+    if (this.dragDirection === 'vertical') return; // let scroll happen
+
+    const target = document.elementFromPoint(clientX, clientY);
+    if (!target || !target.classList.contains('grid-cell')) return;
+    const targetCol = parseInt(target.dataset.col);
+    if (isNaN(targetCol) || targetCol <= this.dragStartCol) return;
+    if (targetCol === this.dragCurrentCol) return;
+
+    this.dragCurrentCol = targetCol;
+
+    // Extend the note at dragStartCol
+    const pattern = this.engine.livePatterns[this.dragLayer];
+    const noteEvent = pattern[this.dragStartCol];
+    if (!noteEvent || typeof noteEvent !== 'object' || !noteEvent.notes) return;
+
+    // Calculate new duration
+    const newDur = targetCol - this.dragStartCol + 1;
+
+    // Clear old continuations
+    for (let j = this.dragStartCol + 1; j < 16; j++) {
+      if (pattern[j] === '__cont__') pattern[j] = null;
+      else break;
+    }
+
+    // Set new duration and continuations
+    noteEvent.dur = newDur;
+    for (let j = 1; j < newDur && (this.dragStartCol + j) < 16; j++) {
+      // Only place continuation if cell is empty
+      if (pattern[this.dragStartCol + j] === null) {
+        pattern[this.dragStartCol + j] = '__cont__';
+      } else {
+        // Hit an occupied cell — cap the duration
+        noteEvent.dur = j;
+        break;
+      }
+    }
+
+    this.engine.rebuildLayerSequence(this.dragLayer);
+    this.buildMelodicGrid(this.dragLayer);
+  }
+
+  finishComposerDrag() {
+    this.dragging = false;
+    this.dragLayer = null;
+    this.dragRow = null;
+    this.dragStartCol = null;
+    this.dragCurrentCol = null;
+    this.dragDirection = null;
+  }
+
   updateGridVisuals() {
     // Drums
     const dp = this.engine.getDrumGrid();
@@ -1798,7 +2248,15 @@ class BeatLabApp {
         return;
       }
       this.gridCells[layer].forEach((row, r) => {
-        row.forEach((cell, c) => cell.classList.toggle('on', !!data.grid[r]?.[c]));
+        row.forEach((cell, c) => {
+          const state = data.grid[r]?.[c] || 0;
+          cell.classList.toggle('on', state > 0);
+          if (this.composerMode) {
+            cell.classList.toggle('note-start', state === 1);
+            cell.classList.toggle('note-cont', state === 2);
+            cell.classList.toggle('note-end', state > 0 && (data.grid[r]?.[c+1] || 0) !== 2);
+          }
+        });
       });
     });
   }
@@ -2221,7 +2679,12 @@ class BeatLabApp {
       const sec = btn.dataset.section;
       btn.classList.remove('active', 'completed', 'locked');
 
-      if (sec === this.currentTutorialSection) {
+      if (this.composerMode) {
+        // Composer mode — all unlocked, highlight current
+        if (sec === this.engine.currentSection) {
+          btn.classList.add('active');
+        }
+      } else if (sec === this.currentTutorialSection) {
         btn.classList.add('active');
       } else if (this.completedSections.has(sec)) {
         btn.classList.add('completed');
@@ -2251,6 +2714,7 @@ class BeatLabApp {
           btn.classList.add('active');
           this.engine.setSection(sec);
           this.buildAllGrids();
+          if (this.composerMode) this.updateSectionButtons();
         }
       });
     });
@@ -2266,9 +2730,66 @@ class BeatLabApp {
     const mobilePlayBtn = document.getElementById('mobile-play');
     if (mobilePlayBtn) mobilePlayBtn.addEventListener('click', togglePlay);
 
-    // Stop painting on mouseup/touchend
-    window.addEventListener('mouseup', () => { this.painting = false; });
-    window.addEventListener('touchend', () => { this.painting = false; });
+    // Stop painting on mouseup/touchend + finish composer drag
+    window.addEventListener('mouseup', () => { this.painting = false; this.finishComposerDrag(); });
+    window.addEventListener('touchend', () => { this.painting = false; this.finishComposerDrag(); });
+
+    // Global drag handlers for composer mode drag-to-extend
+    window.addEventListener('mousemove', (e) => {
+      if (this.dragging) this.handleComposerDrag(e.clientX, e.clientY);
+    });
+    window.addEventListener('touchmove', (e) => {
+      if (this.dragging) {
+        const touch = e.touches[0];
+        this.handleComposerDrag(touch.clientX, touch.clientY);
+        if (this.dragDirection === 'horizontal') e.preventDefault();
+      }
+    }, {passive:false});
+
+    // Octave buttons
+    document.querySelectorAll('.oct-up').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const layer = btn.dataset.layer;
+        if (this.engine.octaveOffsets[layer] < 3) {
+          this.engine.octaveOffsets[layer]++;
+          this.updateOctaveDisplays();
+          this.buildMelodicGrid(layer);
+        }
+      });
+    });
+    document.querySelectorAll('.oct-down').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const layer = btn.dataset.layer;
+        if (this.engine.octaveOffsets[layer] > -3) {
+          this.engine.octaveOffsets[layer]--;
+          this.updateOctaveDisplays();
+          this.buildMelodicGrid(layer);
+        }
+      });
+    });
+
+    // Arp button
+    const arpBtn = document.querySelector('.arp-btn');
+    if (arpBtn) {
+      arpBtn.addEventListener('click', () => {
+        const arp = this.engine.arpeggiator;
+        const modes = this.engine.ARP_MODES;
+        const currentIdx = modes.indexOf(arp.enabled ? arp.mode : 'off');
+        const nextIdx = (currentIdx + 1) % modes.length;
+        const nextMode = modes[nextIdx];
+        if (nextMode === 'off') {
+          arp.enabled = false;
+          arpBtn.textContent = 'ARP: OFF';
+          arpBtn.classList.remove('active');
+        } else {
+          arp.enabled = true;
+          arp.mode = nextMode;
+          arpBtn.textContent = 'ARP: ' + nextMode.toUpperCase();
+          arpBtn.classList.add('active');
+        }
+        this.engine.rebuildLayerSequence('lead');
+      });
+    }
 
     // Mobile drawer toggle
     const drawerHandle = document.getElementById('drawer-handle');
@@ -2324,15 +2845,21 @@ class BeatLabApp {
     if (idx < 0) idx = TRACKS.length - 1;
     if (idx >= TRACKS.length) idx = 0;
 
-    // Exit tutorial mode if changing away from D&B
-    if (idx !== DNB_TRACK_INDEX) {
-      this.tutorialMode = false;
-      document.getElementById('task-panel').style.display = 'none';
-      document.getElementById('task-drawer').style.display = 'none';
+    // In composer mode, just switch the synth engine (no tutorial logic)
+    if (this.composerMode) {
+      // Clear section patterns when switching tracks — old patterns don't match new synths
+      this.engine.sectionPatterns = {};
     } else {
-      this.tutorialMode = true;
-      document.getElementById('task-panel').style.display = '';
-      document.getElementById('task-drawer').style.display = '';
+      // Exit tutorial mode if changing away from D&B
+      if (idx !== DNB_TRACK_INDEX) {
+        this.tutorialMode = false;
+        document.getElementById('task-panel').style.display = 'none';
+        document.getElementById('task-drawer').style.display = 'none';
+      } else {
+        this.tutorialMode = true;
+        document.getElementById('task-panel').style.display = '';
+        document.getElementById('task-drawer').style.display = '';
+      }
     }
 
     this.engine.loadTrack(idx);
@@ -2425,6 +2952,37 @@ document.getElementById('start-btn').addEventListener('click', async () => {
       console.error('Beat Lab init error:', e);
     }
   }
+});
+
+// Compose button → skip onboarding, go straight to composer workbench
+document.getElementById('compose-btn').addEventListener('click', async () => {
+  document.getElementById('start-overlay').classList.add('fade-out');
+  setTimeout(() => document.getElementById('start-overlay').style.display = 'none', 500);
+
+  if (!app) {
+    app = new BeatLabApp();
+    try {
+      await app.initOnly();
+    } catch(e) {
+      console.error('Beat Lab init error:', e);
+    }
+  }
+
+  // Skip onboarding entirely
+  setTimeout(() => {
+    document.getElementById('app').classList.remove('hidden');
+    if (app) {
+      try {
+        app.startComposerMode();
+      } catch(e) {
+        console.error('Beat Lab composer error:', e);
+        const msg = document.createElement('div');
+        msg.style.cssText = 'position:fixed;inset:0;background:#111;color:#f44;padding:40px;font:16px monospace;z-index:9999;white-space:pre-wrap;';
+        msg.textContent = 'Error starting composer:\n\n' + (e.stack || e);
+        document.body.appendChild(msg);
+      }
+    }
+  }, 500);
 });
 
 // Onboarding step 1 → step 2

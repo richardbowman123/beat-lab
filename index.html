@@ -16,11 +16,14 @@
         <div id="start-content">
             <h1 id="start-logo">BEAT LAB</h1>
             <p id="start-sub">learn to produce</p>
-            <button id="start-btn" aria-label="Start">
-                <svg viewBox="0 0 80 80" width="80" height="80">
-                    <polygon points="22,12 22,68 66,40" fill="currentColor"/>
-                </svg>
-            </button>
+            <div id="start-buttons">
+                <button id="start-btn" aria-label="Start Tutorial">
+                    <svg viewBox="0 0 80 80" width="80" height="80">
+                        <polygon points="22,12 22,68 66,40" fill="currentColor"/>
+                    </svg>
+                </button>
+                <button id="compose-btn">COMPOSE</button>
+            </div>
         </div>
     </div>
 
@@ -102,7 +105,14 @@
 
             <main id="panels">
                 <div class="panel" data-layer="bass">
-                    <div class="panel-head"><span class="panel-name">BASS</span></div>
+                    <div class="panel-head">
+                        <span class="panel-name">BASS</span>
+                        <div class="octave-controls hidden" data-layer="bass">
+                            <button class="oct-btn oct-down" data-layer="bass">-</button>
+                            <span class="oct-display" data-layer="bass">OCT 1</span>
+                            <button class="oct-btn oct-up" data-layer="bass">+</button>
+                        </div>
+                    </div>
                     <div class="grid-wrap"><div class="grid" data-layer="bass"></div></div>
                     <div class="sliders" data-layer="bass"></div>
                 </div>
@@ -112,12 +122,27 @@
                     <div class="sliders" data-layer="drums"></div>
                 </div>
                 <div class="panel" data-layer="synth">
-                    <div class="panel-head"><span class="panel-name">SYNTH</span></div>
+                    <div class="panel-head">
+                        <span class="panel-name">SYNTH</span>
+                        <div class="octave-controls hidden" data-layer="synth">
+                            <button class="oct-btn oct-down" data-layer="synth">-</button>
+                            <span class="oct-display" data-layer="synth">OCT 3</span>
+                            <button class="oct-btn oct-up" data-layer="synth">+</button>
+                        </div>
+                    </div>
                     <div class="grid-wrap"><div class="grid" data-layer="synth"></div></div>
                     <div class="sliders" data-layer="synth"></div>
                 </div>
                 <div class="panel" data-layer="lead">
-                    <div class="panel-head"><span class="panel-name">LEAD</span></div>
+                    <div class="panel-head">
+                        <span class="panel-name">LEAD</span>
+                        <div class="octave-controls hidden" data-layer="lead">
+                            <button class="oct-btn oct-down" data-layer="lead">-</button>
+                            <span class="oct-display" data-layer="lead">OCT 4</span>
+                            <button class="oct-btn oct-up" data-layer="lead">+</button>
+                        </div>
+                        <button class="arp-btn hidden" data-layer="lead">ARP: OFF</button>
+                    </div>
                     <div class="grid-wrap"><div class="grid" data-layer="lead"></div></div>
                     <div class="sliders" data-layer="lead"></div>
                 </div>

@@ -33,6 +33,9 @@ body {
     font-size: clamp(14px, 2.5vw, 18px); color: var(--text-dim);
     letter-spacing: 0.3em; text-transform: uppercase; margin-bottom: 40px;
 }
+#start-buttons {
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
 #start-btn {
     display: flex; align-items: center; justify-content: center;
     width: 120px; height: 120px; margin: 0 auto; border-radius: 50%;
@@ -42,6 +45,19 @@ body {
 }
 #start-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.05); }
 #start-btn:active { transform: scale(0.95); }
+#compose-btn {
+    font-family: 'Orbitron', sans-serif; font-weight: 700;
+    font-size: 13px; letter-spacing: 0.12em;
+    padding: 12px 36px; border-radius: 30px; border: none; cursor: pointer;
+    color: #fff; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    transition: all 0.2s;
+}
+#compose-btn:hover {
+    background: linear-gradient(135deg, rgba(232,168,73,0.2), rgba(196,74,255,0.2));
+    border-color: rgba(232,168,73,0.4);
+    transform: scale(1.03);
+}
 @keyframes pulse-btn {
     0%, 100% { box-shadow: 0 0 20px rgba(196,74,255,0.2); }
     50% { box-shadow: 0 0 40px rgba(196,74,255,0.4), 0 0 60px rgba(74,158,255,0.2); }
@@ -283,6 +299,8 @@ body {
 
 /* ===== NOTE GRID ===== */
 .grid-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+/* Melodic grids scroll vertically in composer mode */
+.grid-wrap.scrollable { overflow-y: auto; overflow-x: hidden; }
 .grid {
     display: grid; gap: 1px;
     width: 100%; height: 100%;
@@ -419,6 +437,73 @@ body {
     opacity: 0.15;
 }
 
+/* ===== OCTAVE CONTROLS ===== */
+.octave-controls {
+    display: flex; align-items: center; gap: 4px;
+}
+.octave-controls.hidden { display: none; }
+.oct-btn {
+    font-family: 'Orbitron', sans-serif; font-weight: 700;
+    font-size: 11px; width: 22px; height: 20px;
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+    background: rgba(255,255,255,0.06); color: #fff;
+    cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+}
+.oct-btn:hover { background: rgba(255,255,255,0.14); }
+.oct-btn:active { transform: scale(0.9); }
+.oct-display {
+    font-family: 'Orbitron', sans-serif; font-size: 8px; font-weight: 700;
+    color: var(--text-dim); letter-spacing: 0.06em;
+    min-width: 36px; text-align: center;
+}
+
+/* ===== ARP BUTTON ===== */
+.arp-btn {
+    font-family: 'Orbitron', sans-serif; font-weight: 700;
+    font-size: 8px; letter-spacing: 0.06em;
+    padding: 3px 8px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06); color: var(--text-dim);
+    cursor: pointer; transition: all 0.15s;
+}
+.arp-btn.hidden { display: none; }
+.arp-btn.active {
+    color: var(--lead); border-color: rgba(74,255,184,0.4);
+    background: rgba(74,255,184,0.12);
+}
+.arp-btn:hover { background: rgba(255,255,255,0.12); }
+
+/* ===== NOTE BAR (variable length notes) ===== */
+.grid-cell.note-start {
+    border-radius: 3px 0 0 3px;
+    border-right: none;
+}
+.grid-cell.note-cont {
+    border-radius: 0;
+    border-left: none; border-right: none;
+}
+.grid-cell.note-end {
+    border-radius: 0 3px 3px 0;
+    border-left: none;
+}
+.grid-cell.note-start.note-end {
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.03);
+}
+/* Drag preview */
+.grid-cell.drag-preview {
+    outline: 2px solid rgba(255,255,255,0.3);
+    outline-offset: -1px;
+}
+
+/* Fixed-height rows for melodic grids in composer mode */
+.grid.fixed-rows {
+    height: auto;
+    grid-auto-rows: 22px;
+}
+
 /* ===== SLIDERS — Mixing Desk Fader Style ===== */
 .sliders {
     display: flex; gap: 6px; justify-content: center; align-items: flex-end;
@@ -427,7 +512,7 @@ body {
 }
 .slider-unit {
     display: flex; flex-direction: column; align-items: center; gap: 3px;
-    flex: 1; max-width: 70px;
+    flex: 1; max-width: 54px;
 }
 .slider-track {
     position: relative; width: 30px; height: 90px;
@@ -828,6 +913,9 @@ body {
 
     /* --- Panel header hidden on mobile (tabs serve this purpose) --- */
     .panel-head { display: none; }
+    /* In composer mode, show panel head for octave/arp controls */
+    .composer-mode .panel-head { display: flex; }
+    .composer-mode .panel-head .panel-name { display: none; }
 
     /* --- Grid: full width, touch-friendly cells --- */
     .grid {
@@ -843,8 +931,8 @@ body {
         height: 90px; min-height: 70px;
         gap: 4px; padding: 4px 2px 8px;
     }
-    .slider-track { height: 65px; width: 28px; }
-    .slider-label { font-size: 7px; }
+    .slider-track { height: 65px; width: 22px; }
+    .slider-label { font-size: 5.5px; letter-spacing: 0; }
 
     /* --- Section progress dots (replaces full section bar) --- */
     /* Shown inside top-bar via JS as small dots */
